@@ -33,7 +33,10 @@ struct SCNModelView: UIViewRepresentable {
             sceneView.backgroundColor = .clear
             let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
             sceneView.addGestureRecognizer(tapGesture)
-
+            var nodses = getAllNodes(from: scene.rootNode)
+            for node in nodses {
+//                print(node.name)
+            }
 
            
         } else {
@@ -49,75 +52,139 @@ struct SCNModelView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
+    func resetSystemView(in scnView: SCNView) {
+        guard let rootNode = scnView.scene?.rootNode else { return }
+
+        // Show all nodes
+        for node in getAllNodes(from: rootNode) {
+            node.isHidden = false
+        }
+
+        // Reset camera position
+        guard let cameraNode = scnView.pointOfView else { return }
+        SCNTransaction.begin()
+        SCNTransaction.animationDuration = 1.0
+        SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+
+        cameraNode.worldPosition = SCNVector3(0, 0, 50) // Adjust as needed
+        cameraNode.constraints = nil // Remove look-at constraints
+
+        SCNTransaction.commit()
+    }
+
     class Coordinator: NSObject {
         var parent: SCNModelView
 
         init(_ parent: SCNModelView) {
             self.parent = parent
         }
-
         @objc func handleTap(_ gestureRecognize: UIGestureRecognizer) {
-            // Get the SceneKit view
             guard let scnView = gestureRecognize.view as? SCNView else { return }
-
-            // Get the location of the tap
+            guard let cameraNode = scnView.pointOfView else {
+                print("Camera node not found!")
+                return
+            }
             let location = gestureRecognize.location(in: scnView)
 
-            // Perform hit test to find the tapped node
+            // Perform hit test on the scene
             let hitResults = scnView.hitTest(location, options: [:])
 
-            // If a node is tapped
-            if let result = hitResults.first {
-                let node = result.node
+            // Check if any nodes are hit
+            guard !hitResults.isEmpty else {
+                print("No nodes detected at tap location.")
+                return
+            }
 
-                // Focus on the tapped node
-                focusOnNode(node, in: scnView)
+            // Find the closest node based on calculated distance
+            var closestNode: SCNNode?
+            var closestDistance: Float = Float.greatestFiniteMagnitude
+
+            for hit in hitResults {
+                let node = hit.node
+
+                // Calculate the node's world position
+                let nodeWorldPosition = node.convertPosition(SCNVector3Zero, to: nil)
+
+                // Calculate the camera's world position
+                let cameraWorldPosition = cameraNode.position
+
+                // Compute Euclidean distance
+                let distance = sqrt(
+                    pow(cameraWorldPosition.x - nodeWorldPosition.x, 2) +
+                    pow(cameraWorldPosition.y - nodeWorldPosition.y, 2) +
+                    pow(cameraWorldPosition.z - nodeWorldPosition.z, 2)
+                )
+
+                // Update the closest node if this one is nearer
+                if distance < closestDistance {
+                    closestNode = node
+                    closestDistance = distance
+                }
+            }
+
+            // Focus on the closest node
+            if let closestNode = closestNode {
+                print("Closest node: \(closestNode.name ?? "Unnamed") at distance \(closestDistance)")
+                focusOnNode(closestNode, in: scnView)
             }
         }
 
         func focusOnNode(_ node: SCNNode, in scnView: SCNView) {
-            // Create a camera action to focus on the node
-            let lookAtAction = SCNAction.rotate(toAxisAngle: SCNVector4(x: 0, y: 1, z: 0, w: 0), duration: 0.5)
+            guard let currentCamera = scnView.pointOfView else { return }
 
-            // Calculate the camera position to frame the node
+            // Get the bounding box of the node
             let (min, max) = node.boundingBox
-            let center = SCNVector3(
+
+            // Calculate the node's center in its local coordinate space
+            let nodeCenter = SCNVector3(
                 (min.x + max.x) / 2,
                 (min.y + max.y) / 2,
                 (min.z + max.z) / 2
             )
 
-            // Get the bounding box size
+            // Transform the node's center to world coordinates
+            let worldCenter = node.convertPosition(nodeCenter, to: nil)
+
+            // Calculate the distance to position the camera
             let size = SCNVector3(
                 max.x - min.x,
                 max.y - min.y,
                 max.z - min.z
             )
-
-            // Calculate an appropriate distance to view the entire node
             let maxDimension = [abs(size.x), abs(size.y), abs(size.z)].max() ?? 1.0
-            let distance = maxDimension * 2
+            let zoomDistance = maxDimension * 0.5
 
-            // Create a new camera position
-            let cameraNode = SCNNode()
-            cameraNode.camera = SCNCamera()
-            cameraNode.position = SCNVector3(
-                center.x,
-                center.y,
-                center.z + distance
+            // Calculate the new camera position along the forward vector
+            let direction = SCNVector3(
+                currentCamera.worldPosition.x - worldCenter.x,
+                currentCamera.worldPosition.y - worldCenter.y,
+                currentCamera.worldPosition.z - worldCenter.z
+            )
+            let normalizedDirection = SCNVector3(
+                direction.x / maxDimension,
+                direction.y / maxDimension,
+                direction.z / maxDimension
+            )
+            let newCameraPosition = SCNVector3(
+                worldCenter.x + normalizedDirection.x * zoomDistance,
+                worldCenter.y + normalizedDirection.y * zoomDistance,
+                worldCenter.z + normalizedDirection.z * zoomDistance
             )
 
-            // Set up the camera constraints
+            // Animate the camera movement and apply the LookAt constraint
+            SCNTransaction.begin()
+            SCNTransaction.animationDuration = 1.0
+            SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+
+            currentCamera.worldPosition = newCameraPosition
             let lookAtConstraint = SCNLookAtConstraint(target: node)
             lookAtConstraint.isGimbalLockEnabled = true
-            cameraNode.constraints = [lookAtConstraint]
+            currentCamera.constraints = [lookAtConstraint]
 
-            // Animate the camera movement
-            SCNTransaction.begin()
-            SCNTransaction.animationDuration = 0.5
-            scnView.pointOfView = cameraNode
             SCNTransaction.commit()
         }
+        
+
     }
 
 

@@ -9,9 +9,11 @@ import SwiftUI
 
 @main
 struct PlanetsApp: App {
+    @State var currentPlanet =  SelectedPlanet()
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            MainView()
+                .environmentObject(currentPlanet)
         }
     }
 }

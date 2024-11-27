@@ -151,5 +151,5 @@ struct PlanetProperties {
 
 
 class SelectedPlanet : ObservableObject {
-    @Published var selectePlanet = 0
+    @Published var selectePlanet = 2
 }

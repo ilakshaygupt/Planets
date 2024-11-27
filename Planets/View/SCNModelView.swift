@@ -5,40 +5,36 @@
 //  Created by Lakshay Gupta on 27/11/24.
 //
 
-
-import SwiftUI
 import SceneKit
+import SwiftUI
 
+//
 func getAllNodes(from node: SCNNode) -> [SCNNode] {
-    var nodes = [node] // Start with the current node
+    var nodes = [node]
     for child in node.childNodes {
-        nodes.append(contentsOf: getAllNodes(from: child)) // Recursively add child nodes
+        nodes.append(contentsOf: getAllNodes(from: child))
     }
     return nodes
 }
 
-
 struct SCNModelView: UIViewRepresentable {
+
+    @EnvironmentObject private var selectedPlanet: SelectedPlanet
 
     let scnFileName: String
 
     func makeUIView(context: Context) -> SCNView {
         let sceneView = SCNView()
-        // Load the SCN file
+
         if let scene = SCNScene(named: "\(scnFileName).scn") {
             sceneView.scene = scene
             sceneView.allowsCameraControl = true
-
             sceneView.autoenablesDefaultLighting = true
             sceneView.backgroundColor = .clear
-            let tapGesture = UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
-            sceneView.addGestureRecognizer(tapGesture)
-            var nodses = getAllNodes(from: scene.rootNode)
-            for node in nodses {
-//                print(node.name)
-            }
 
-           
+            let tapGesture = UITapGestureRecognizer(
+                target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
+            sceneView.addGestureRecognizer(tapGesture)
         } else {
             print("Failed to load SCN file.")
         }
@@ -47,27 +43,27 @@ struct SCNModelView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: SCNView, context: Context) {
-        // Handle updates to the SCNView if needed
+
     }
+
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
     }
+
     func resetSystemView(in scnView: SCNView) {
         guard let rootNode = scnView.scene?.rootNode else { return }
 
-        // Show all nodes
         for node in getAllNodes(from: rootNode) {
             node.isHidden = false
         }
 
-        // Reset camera position
         guard let cameraNode = scnView.pointOfView else { return }
         SCNTransaction.begin()
         SCNTransaction.animationDuration = 1.0
         SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
 
-        cameraNode.worldPosition = SCNVector3(0, 0, 50) // Adjust as needed
-        cameraNode.constraints = nil // Remove look-at constraints
+        cameraNode.worldPosition = SCNVector3(0, 0, 50)
+        cameraNode.constraints = nil
 
         SCNTransaction.commit()
     }
@@ -78,6 +74,7 @@ struct SCNModelView: UIViewRepresentable {
         init(_ parent: SCNModelView) {
             self.parent = parent
         }
+
         @objc func handleTap(_ gestureRecognize: UIGestureRecognizer) {
             guard let scnView = gestureRecognize.view as? SCNView else { return }
             guard let cameraNode = scnView.pointOfView else {
@@ -86,66 +83,105 @@ struct SCNModelView: UIViewRepresentable {
             }
             let location = gestureRecognize.location(in: scnView)
 
-            // Perform hit test on the scene
             let hitResults = scnView.hitTest(location, options: [:])
 
-            // Check if any nodes are hit
             guard !hitResults.isEmpty else {
                 print("No nodes detected at tap location.")
                 return
             }
 
-            // Find the closest node based on calculated distance
             var closestNode: SCNNode?
             var closestDistance: Float = Float.greatestFiniteMagnitude
 
             for hit in hitResults {
                 let node = hit.node
 
-                // Calculate the node's world position
                 let nodeWorldPosition = node.convertPosition(SCNVector3Zero, to: nil)
 
-                // Calculate the camera's world position
                 let cameraWorldPosition = cameraNode.position
 
-                // Compute Euclidean distance
                 let distance = sqrt(
-                    pow(cameraWorldPosition.x - nodeWorldPosition.x, 2) +
-                    pow(cameraWorldPosition.y - nodeWorldPosition.y, 2) +
-                    pow(cameraWorldPosition.z - nodeWorldPosition.z, 2)
+                    pow(cameraWorldPosition.x - nodeWorldPosition.x, 2)
+                        + pow(cameraWorldPosition.y - nodeWorldPosition.y, 2)
+                        + pow(cameraWorldPosition.z - nodeWorldPosition.z, 2)
                 )
 
-                // Update the closest node if this one is nearer
                 if distance < closestDistance {
                     closestNode = node
                     closestDistance = distance
                 }
             }
 
-            // Focus on the closest node
             if let closestNode = closestNode {
-                print("Closest node: \(closestNode.name ?? "Unnamed") at distance \(closestDistance)")
-                focusOnNode(closestNode, in: scnView)
+                print(
+                    "Closest node: \(closestNode.name ?? "Unnamed") at distance \(closestDistance)")
+
+                if let planetName = closestNode.name {
+                    self.focusOnNode(closestNode, in: scnView)
+
+                    self.transitionToPlanetModel(named: planetName, in: scnView)
+                }
+            }
+        }
+
+        func transitionToPlanetModel(named planetID: String, in scnView: SCNView) {
+
+            let objectToSceneMapping: [String: String] = [
+                "Object_21": "Sun.scn",
+                "Object_0": "Mercury.scn",
+                "Object_1": "Venus.scn",
+                "Object_10": "Moon.scn",
+                "Object_2": "Earth.scn",
+                "Object_3": "Mars.scn",
+                "Object_4": "Jupiter.scn",
+                "Object_5": "Saturn.scn",
+                "Object_7": "Uranus.scn",
+                "Object_8": "Neptune.scn",
+            ]
+
+            if let planetSceneName = objectToSceneMapping[planetID] {
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+
+                    let sceneName = "\(planetSceneName)"
+
+                    if let scene = SCNScene(named: sceneName) {
+                        scnView.scene = scene
+
+                        let searchString = planetSceneName.prefix(planetSceneName.count - 4)
+
+                        if let index = PlanetModel.planets.firstIndex(where: {
+                            $0.name.contains(searchString)
+                        }) {
+
+                            self.parent.selectedPlanet.selectePlanet = index
+                            print("Planet \(searchString) found at index \(index)")
+                        } else {
+                            print("No planet found")
+                        }
+                        print("Transitioned to \(planetSceneName) scene.")
+                    } else {
+                        print("Scene for \(planetSceneName) not found.")
+                    }
+                }
+            } else {
+                print("Object \(planetID) not mapped to a scene.")
             }
         }
 
         func focusOnNode(_ node: SCNNode, in scnView: SCNView) {
             guard let currentCamera = scnView.pointOfView else { return }
 
-            // Get the bounding box of the node
             let (min, max) = node.boundingBox
 
-            // Calculate the node's center in its local coordinate space
             let nodeCenter = SCNVector3(
                 (min.x + max.x) / 2,
                 (min.y + max.y) / 2,
                 (min.z + max.z) / 2
             )
 
-            // Transform the node's center to world coordinates
             let worldCenter = node.convertPosition(nodeCenter, to: nil)
 
-            // Calculate the distance to position the camera
             let size = SCNVector3(
                 max.x - min.x,
                 max.y - min.y,
@@ -154,7 +190,6 @@ struct SCNModelView: UIViewRepresentable {
             let maxDimension = [abs(size.x), abs(size.y), abs(size.z)].max() ?? 1.0
             let zoomDistance = maxDimension * 0.5
 
-            // Calculate the new camera position along the forward vector
             let direction = SCNVector3(
                 currentCamera.worldPosition.x - worldCenter.x,
                 currentCamera.worldPosition.y - worldCenter.y,
@@ -171,7 +206,6 @@ struct SCNModelView: UIViewRepresentable {
                 worldCenter.z + normalizedDirection.z * zoomDistance
             )
 
-            // Animate the camera movement and apply the LookAt constraint
             SCNTransaction.begin()
             SCNTransaction.animationDuration = 1.0
             SCNTransaction.animationTimingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -183,9 +217,5 @@ struct SCNModelView: UIViewRepresentable {
 
             SCNTransaction.commit()
         }
-        
-
     }
-
-
 }

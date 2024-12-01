@@ -8,7 +8,7 @@
 import SceneKit
 import SwiftUI
 
-//
+
 func getAllNodes(from node: SCNNode) -> [SCNNode] {
     var nodes = [node]
     for child in node.childNodes {
@@ -21,7 +21,7 @@ struct SCNModelView: UIViewRepresentable {
 
     @EnvironmentObject private var selectedPlanet: SelectedPlanet
 
-    let scnFileName: String
+    @Binding var scnFileName: String
 
     func makeUIView(context: Context) -> SCNView {
         let sceneView = SCNView()
@@ -43,7 +43,15 @@ struct SCNModelView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: SCNView, context: Context) {
+        loadScene(in: uiView)
+    }
 
+    private func loadScene(in sceneView: SCNView) {
+        if let scene = SCNScene(named: "\(scnFileName).scn") {
+            sceneView.scene = scene
+        } else {
+            print("Failed to load SCN file: \(scnFileName)")
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -145,15 +153,16 @@ struct SCNModelView: UIViewRepresentable {
 
                     let sceneName = "\(planetSceneName)"
 
-                    if let scene = SCNScene(named: sceneName) {
-                        scnView.scene = scene
 
+                    if let scene = SCNScene(named: sceneName) {
+
+                        scnView.scene = scene
+                        self.parent.scnFileName = planetSceneName
                         let searchString = planetSceneName.prefix(planetSceneName.count - 4)
 
                         if let index = PlanetModel.planets.firstIndex(where: {
                             $0.name.contains(searchString)
                         }) {
-
                             self.parent.selectedPlanet.selectePlanet = index
                             print("Planet \(searchString) found at index \(index)")
                         } else {
